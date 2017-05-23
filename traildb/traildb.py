@@ -178,7 +178,7 @@ class TrailDBConstructor(object):
         if f < 0:
             raise TrailDBError("Wrong number of fields: %d" % db.num_fields)
         if f > 0:
-            raise TrailDBError("Too many values: %s" % values[f])
+            raise TrailDBError("Too many values")
 
     def finalize(self):
         """Finalize this TrailDB. You cannot add new events in this TrailDB
