@@ -193,11 +193,14 @@ class TrailDBConstructor(object):
 
 
 class TrailDBCursor(object):
-    """
-    TrailDBCursor iterates over events of a trail.
+    """TrailDBCursor iterates over events of a trail.
 
     Typically this class is not instantiated directly but it is
-    returned by TrailDB.trail().
+    returned by TrailDB.trail() or TrailDB.cursor()
+
+    A cursor can be reused for different trails by calling
+    TrailDBCursor.get_trail(trail_id)
+
     """
 
     def __init__(self,
@@ -216,6 +219,8 @@ class TrailDBCursor(object):
             self.event_filter_obj = event_filter_obj
             if lib.tdb_cursor_set_event_filter(cursor, event_filter_obj.flt):
                 raise TrailDBError("cursor_set_event_filter failed")
+        else:
+           self.event_filter_obj = None
 
     def __del__(self):
         if self.cursor:
@@ -223,6 +228,15 @@ class TrailDBCursor(object):
 
     def __iter__(self):
         return self
+
+    def get_trail(self, trail_id):
+        if lib.tdb_get_trail(self.cursor, trail_id) != 0:
+            raise TrailDBError("Failed to initalize trail in cursor")
+
+            if self.event_filter_obj:
+                if lib.tdb_cursor_set_event_filter(self.cursor, event_filter_obj.flt):
+                    raise TrailDBError("cursor_set_event_filter failed")
+
 
     def next(self):
         """Return the next event in the trail."""
@@ -348,6 +362,29 @@ class TrailDB(object):
         cursor = lib.tdb_cursor_new(self._db)
         if lib.tdb_get_trail(cursor, trail_id) != 0:
             raise TrailDBError("Failed to create cursor")
+
+        if isinstance(event_filter, TrailDBEventFilter):
+            event_filter_obj = event_filter
+        elif event_filter:
+            event_filter_obj = self.create_filter(event_filter)
+        else:
+            event_filter_obj = None
+
+        valuefun = None if rawitems else self.get_item_value
+        return TrailDBCursor(cursor,
+                             self._event_cls,
+                             valuefun,
+                             parsetime,
+                             only_timestamp,
+                             event_filter_obj)
+
+    def cursor(self,
+               parsetime=False,
+               rawitems=False,
+               only_timestamp=False,
+               event_filter=None):
+
+        cursor = lib.tdb_cursor_new(self._db)
 
         if isinstance(event_filter, TrailDBEventFilter):
             event_filter_obj = event_filter
