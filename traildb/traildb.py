@@ -83,6 +83,7 @@ api(lib.tdb_cursor_set_event_filter, [tdb_cursor, tdb_event_filter], tdb_error)
 
 api(lib.tdb_event_filter_new, [], tdb_event_filter)
 api(lib.tdb_event_filter_add_term, [tdb_event_filter, tdb_item, c_int], tdb_error)
+api(lib.tdb_event_filter_add_time_range, [c_uint64, c_uint64], tdb_error)
 api(lib.tdb_event_filter_new_clause, [tdb_event_filter], tdb_error)
 api(lib.tdb_event_filter_free, [tdb_event_filter])
 
@@ -414,6 +415,42 @@ class TrailDB(object):
         return TrailDBEventFilter(self, event_filter)
 
 class TrailDBEventFilter(object):
+    """
+    Converts a query defined in terms of Python collections to a
+    `tdb_event_filter` which can be passed to various TrailDB functions.
+    Performs some validation when parsing the query.
+
+    Queries are boolean expressions defined from terms and clauses.  A term is
+    defined using a tuple:
+
+    (field_name, "value") -- match records with field_name == "value"
+    (field_name, "value", False) -- match records with field_name == "value"
+    (field_name, "value", True) -- match records with field_name != "value"
+    (start_time, end_time) -- match records with start_time <= time < end_time
+
+    Clauses are boolean expressions formed from terms, which are connected with AND.
+    Clauses are defined with lists of terms:
+
+    [term]
+    [term1, term2]
+    [term1, term2, ...]
+
+    Queries are boolean expressions formed from clauses, which are connected with OR.
+    Queries are defined with lists of clauses:
+
+    [clause]
+    [clause1, clause2]
+    [clause1, clause2, ...]
+
+    Some complete examples:
+    
+    [[("user", "george_jetson")]] -- Match records for the user "george_jetson"
+    [[("user", "george_jetson", True)]] -- Match records for users other than "george_jetson"
+    [[(1501013929, 1501100260)]] -- Match records between 2017-07-25 3:18 pm to  2017-07-26 3:18 pm
+    [[("job_title", "manager"), ("user", "george_jetson")]] -- Match records for the user "george_jetson" AND with job title "manager"
+    [[("job_title", "manager")], [("user", "george_jetson")]] -- Match records for the user "george_jetson" OR with job title "manager"
+    [[("job_title", "manager"), (1501013929, 1501100260)], [("user", "george_jetson"), (1501013929, 1501100260)]] -- Match records for the user "george_jetson" OR with job title "manager" and between 2017-07-25 3:18 pm to  2017-07-26 3:18 pm
+    """
     def __init__(self, db, query):
         self.flt = lib.tdb_event_filter_new()
         if type(query[0]) is tuple:
@@ -423,19 +460,29 @@ class TrailDBEventFilter(object):
                 err = lib.tdb_event_filter_new_clause(self.flt)
                 if err:
                     raise TrailDBError("Out of memory in _create_filter")
+
             for term in clause:
-                is_negative = False
-                if len(term) == 3:
-                    field, value, is_negative = term
+                err = None
+                # time range?
+                if len(term) == 2 and isinstance(term[0], int) \
+                   and isinstance(term[1], int):
+                    start_time, end_time = term
+                    err = lib.tdb_event_filter_add_time_range(self.flt,
+                                                              start_time,
+                                                              end_time)
                 else:
-                    field, value = term
-                try:
-                    item = db.get_item(field, value)
-                except TrailDBError, ValueError:
-                    item = 0
-                err = lib.tdb_event_filter_add_term(self.flt,
-                                                    item,
-                                                    1 if is_negative else 0)
+                    is_negative = False
+                    if len(term) == 3:
+                        field, value, is_negative = term
+                    else:
+                        field, value = term
+                    try:
+                        item = db.get_item(field, value)
+                    except TrailDBError, ValueError:
+                        item = 0
+                    err = lib.tdb_event_filter_add_term(self.flt,
+                                                        item,
+                                                        1 if is_negative else 0)
                 if err:
                     raise TrailDBError("Out of memory in _create_filter")
 
