@@ -124,6 +124,15 @@ class TestFilter(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual((events[0].field1, events[0].field2), ('e', '5'))
 
+    def test_time_range(self):
+        tdb = TrailDB('testtrail')
+        events = list(tdb.trail(0,
+                                event_filter=[[(2, 4)]],
+                                parsetime=False))
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0].time, 2L)
+        self.assertEqual(events[1].time, 3L)
+
     def test_filter_object(self):
         tdb = TrailDB('testtrail')
         obj = tdb.create_filter([[('field1', 'e'), ('field1', 'c')],
