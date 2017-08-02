@@ -5,7 +5,7 @@ from collections import namedtuple, defaultdict
 from collections import Mapping
 from ctypes import c_char, c_char_p, c_ubyte, c_int, c_void_p
 from ctypes import c_uint, c_uint8, c_uint32, c_uint64
-from ctypes import Structure
+from ctypes import Structure, Union
 from ctypes import CDLL, CFUNCTYPE, POINTER, pointer
 from ctypes import byref, cast, string_at, addressof
 from datetime import datetime
@@ -37,6 +37,12 @@ class tdb_event(Structure):
     _fields_ = [("timestamp", c_uint64),
                 ("num_items", c_uint64),
                 ("items", POINTER(tdb_item))]
+
+class tdb_opt_value(Union):
+    _fields_ = [("ptr", c_void_p),
+                ("value", c_uint64)]
+    
+TDB_OPT_EVENT_FILTER = 101
 
 
 api(lib.tdb_cons_init, [], tdb_cons)
@@ -85,8 +91,12 @@ api(lib.tdb_event_filter_new, [], tdb_event_filter)
 api(lib.tdb_event_filter_add_term, [tdb_event_filter, tdb_item, c_int], tdb_error)
 api(lib.tdb_event_filter_add_time_range, [c_uint64, c_uint64], tdb_error)
 api(lib.tdb_event_filter_new_clause, [tdb_event_filter], tdb_error)
+api(lib.tdb_event_filter_new_match_none, [], tdb_event_filter)
+api(lib.tdb_event_filter_new_match_all, [], tdb_event_filter)
 api(lib.tdb_event_filter_free, [tdb_event_filter])
 
+api(lib.tdb_set_opt, [tdb, c_uint, tdb_opt_value], tdb_error)
+api(lib.tdb_set_trail_opt, [tdb, c_uint64, c_uint, tdb_opt_value], tdb_error)
 
 def uuid_hex(uuid):
     if isinstance(uuid, basestring):
@@ -290,12 +300,25 @@ class TrailDB(object):
         """Return the number of trails."""
         return self.num_trails
 
-    def trails(self, **kwds):
-        """Iterate over all trails in this TrailDB.
+    def trails(self, selected_uuids=None, **kwds):
+        """
+        Iterate over all trails in this TrailDB.
 
-        Keyword arguments are passed to trail()."""
-        for i in xrange(len(self)):
-            yield self.get_uuid(i), self.trail(i, **kwds)
+        The selected_uuids keyword argument can be used to select a subset
+        of trails to iterate over. Missing uuids are skipped over.
+
+        All other keyword arguments are passed to trail().
+        """
+        if selected_uuids is not None:
+            for uuid in selected_uuids:
+                try:
+                    i = self.get_trail_id(uuid)
+                except IndexError:
+                    continue
+                yield uuid, self.trail(i, **kwds)
+        else:
+            for i in xrange(len(self)):
+                yield self.get_uuid(i), self.trail(i, **kwds)
 
     def trail(self,
               trail_id,
@@ -413,6 +436,57 @@ class TrailDB(object):
 
     def create_filter(self, event_filter):
         return TrailDBEventFilter(self, event_filter)
+
+    def apply_whitelist(self, uuids):
+        """
+        Apply a whitelist of the given uuids so that only
+        events with the given uuids are returned by the
+        cursor. (Empty trails are still returned for other uuids.)
+        """
+        empty_filter = lib.tdb_event_filter_new_match_none()
+        all_filter = lib.tdb_event_filter_new_match_all()
+        value = tdb_opt_value(ptr = empty_filter)
+
+        lib.tdb_set_opt(self._db,
+                        TDB_OPT_EVENT_FILTER,
+                        value)
+
+        value = tdb_opt_value(ptr = all_filter)
+        for uuid in uuids:
+            try:
+                trail_id = self.get_trail_id(uuid)
+                lib.tdb_set_trail_opt(self._db,
+                                      trail_id,
+                                      TDB_OPT_EVENT_FILTER,
+                                      value)
+            except IndexError:
+                continue
+
+    def apply_blacklist(self, uuids):
+        """
+        Apply a blacklist of the given uuids so that
+        only events without the given uuids are returned by the
+        cursor. (Empty trails are still returned for the given uuids.)
+        """
+        empty_filter = lib.tdb_event_filter_new_match_none()
+        all_filter = lib.tdb_event_filter_new_match_all()
+        value = tdb_opt_value(ptr = all_filter)
+
+        lib.tdb_set_opt(self._db,
+                        TDB_OPT_EVENT_FILTER,
+                        value)
+
+        value = tdb_opt_value(ptr = empty_filter)
+        for uuid in uuids:
+            try:
+                trail_id = self.get_trail_id(uuid)
+                lib.tdb_set_trail_opt(self._db,
+                                      trail_id,
+                                      TDB_OPT_EVENT_FILTER,
+                                      value)
+            except IndexError:
+                continue
+                                  
 
 class TrailDBEventFilter(object):
     """
