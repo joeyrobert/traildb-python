@@ -237,7 +237,6 @@ class TrailDBCursor(object):
                 if lib.tdb_cursor_set_event_filter(self.cursor, event_filter_obj.flt):
                     raise TrailDBError("cursor_set_event_filter failed")
 
-
     def next(self):
         """Return the next event in the trail."""
         event = lib.tdb_cursor_next(self.cursor)
@@ -342,8 +341,10 @@ class TrailDB(object):
         """Iterate over all trails in this TrailDB.
 
         Keyword arguments are passed to trail()."""
+        cursor = self.cursor(**kwds)
         for i in xrange(len(self)):
-            yield self.get_uuid(i), self.trail(i, **kwds)
+            cursor.get_trail(i)
+            yield self.get_uuid(i), cursor
 
     def trail(self,
               trail_id,
