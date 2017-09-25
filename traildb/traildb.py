@@ -265,10 +265,55 @@ def mk_event_class(fields, valuefun):
     class TrailDBEvent(object):
         __slots__ = ('items', 'rawitems', 'memoized')
 
+        def __repr__(self):
+            return '<TrailDBCursor: {}>'.format(self.to_list())
+
+        def __str__(self):
+            return self.__repr__()
+
         def __init__(self, rawitems, *items):
             self.items = tuple(items)
             self.rawitems = rawitems
             self.memoized = {}
+
+        def _fields(self):
+            return fields
+
+        def __eq__(self, other):
+            fields_checked = set()
+            
+            # Are the field contents same?
+            for f in fields:
+                try:
+                    if self.__getattr__(f) != other.__getattr__(f):
+                        return False
+                    fields_checked.add(f)
+                except AttributeError:
+                    return False
+
+            for f in other._fields():
+                if f not in fields_checked:
+                    return False
+
+            # So field contents and number of them are the
+            # same. But field *names* have not been checked
+            # yet.
+
+            other_fields = other._fields()
+            for i, f in enumerate(fields):
+                if f != other_fields[i]:
+                    return False
+
+            return True
+        
+        def __hash__(self):
+            return hash(tuple(self.to_list()))
+
+        def to_list(self):
+            lst = []
+            for f in fields:
+                lst.append( (f, self.__getattr__(f)) )
+            return lst
 
         def __getattr__(self, name):
             if name in self.memoized:
