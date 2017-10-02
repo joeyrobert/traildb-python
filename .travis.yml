@@ -1,0 +1,11 @@
+language: python
+
+python:
+    - 2.7
+
+script:
+    - ./runtests.sh
+
+before_install:
+    - sudo apt-get -y install libarchive-dev libjudy-dev pkg-config
+    - ./travisdeps.sh

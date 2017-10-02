@@ -40,6 +40,30 @@ class TestAPI(unittest.TestCase):
 
         self.assertEqual(3, n)
 
+    def test_trails_selected_uuids(self):
+        uuids = ["02345678123456781234567812345678",
+                 "12345678123456781234567812345678",
+                 "22345678123456781234567812345678",
+                 "32345678123456781234567812345678",
+                 "42345678123456781234567812345678"]
+        cons = TrailDBConstructor('whitelist_testtrail', ['field1', 'field2'])
+        for uuid in uuids:
+            cons.add(uuid, 1, ['a', '1'])
+            cons.add(uuid, 2, ['b', '2'])
+            cons.add(uuid, 3, ['c', '3'])
+        cons.finalize()
+        
+        tdb = TrailDB('whitelist_testtrail')
+        whitelist = [uuids[0],
+                     uuids[3],
+                     uuids[4]]
+        
+        expected_length = 3
+        for trail_uuid, trail_events in tdb.trails(selected_uuids=whitelist):
+            trail_events = list(trail_events)
+            self.assertEqual(len(trail_events),
+                             expected_length)
+
     def test_crumbs(self):
         db = TrailDB('testtrail.tdb')
 
@@ -95,6 +119,66 @@ class TestAPI(unittest.TestCase):
 
         self.assertEqual((1, 3), db.time_range(parsetime = False))
 
+    def test_apply_whitelist(self):
+        uuids = ["02345678123456781234567812345678",
+                 "12345678123456781234567812345678",
+                 "22345678123456781234567812345678",
+                 "32345678123456781234567812345678",
+                 "42345678123456781234567812345678"]
+        cons = TrailDBConstructor('whitelist_testtrail', ['field1', 'field2'])
+        for uuid in uuids:
+            cons.add(uuid, 1, ['a', '1'])
+            cons.add(uuid, 2, ['b', '2'])
+            cons.add(uuid, 3, ['c', '3'])
+        cons.finalize()
+        
+        tdb = TrailDB('whitelist_testtrail')
+        whitelist = [uuids[0],
+                     uuids[3],
+                     uuids[4]]
+        tdb.apply_whitelist(whitelist)
+        found_trails = list(tdb.trails(parsetime=False))
+
+        self.assertEqual(len(found_trails), len(uuids))
+        for trail_uuid, trail_events in found_trails:
+            if trail_uuid in whitelist:
+                expected_length = 3
+            else:
+                expected_length = 0
+                
+            trail_events = list(trail_events)
+            self.assertEqual(len(trail_events),
+                             expected_length)
+
+    def test_apply_blacklist(self):
+        uuids = ["02345678123456781234567812345678",
+                 "12345678123456781234567812345678",
+                 "22345678123456781234567812345678",
+                 "32345678123456781234567812345678",
+                 "42345678123456781234567812345678"]
+        cons = TrailDBConstructor('blacklist_testtrail', ['field1', 'field2'])
+        for uuid in uuids:
+            cons.add(uuid, 1, ['a', '1'])
+            cons.add(uuid, 2, ['b', '2'])
+            cons.add(uuid, 3, ['c', '3'])
+        cons.finalize()
+        
+        tdb = TrailDB('blacklist_testtrail')
+        blacklist = [uuids[1],
+                     uuids[2]]
+        tdb.apply_blacklist(blacklist)
+        found_trails = list(tdb.trails(parsetime=False))
+
+        for trail_uuid, trail_events in found_trails:
+            if trail_uuid in blacklist:
+                expected_length = 0
+            else:
+                expected_length = 3
+                
+            trail_events = list(trail_events)
+            self.assertEqual(len(trail_events),
+                             expected_length)
+
 class TestFilter(unittest.TestCase):
 
     def setUp(self):
@@ -130,6 +214,15 @@ class TestFilter(unittest.TestCase):
                                                  [('field3', 'y', True)]]))
         self.assertEqual(len(events), 1)
         self.assertEqual((events[0].field1, events[0].field2), ('e', '5'))
+
+    def test_time_range(self):
+        tdb = TrailDB('testtrail')
+        events = list(tdb.trail(0,
+                                event_filter=[[(2, 4)]],
+                                parsetime=False))
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0].time, 2L)
+        self.assertEqual(events[1].time, 3L)
 
     def test_filter_object(self):
         tdb = TrailDB('testtrail')
