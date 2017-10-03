@@ -139,7 +139,7 @@ class TestAPI(unittest.TestCase):
                      uuids[3],
                      uuids[4]]
         tdb.apply_whitelist(whitelist)
-        found_trails = list(tdb.trails(parsetime=False))
+        found_trails = list(tdb.trails(parsetime=False, distinct_cursors=True))
 
         self.assertEqual(len(found_trails), len(uuids))
         for trail_uuid, trail_events in found_trails:
@@ -169,7 +169,7 @@ class TestAPI(unittest.TestCase):
         blacklist = [uuids[1],
                      uuids[2]]
         tdb.apply_blacklist(blacklist)
-        found_trails = list(tdb.trails(parsetime=False))
+        found_trails = list(tdb.trails(parsetime=False, distinct_cursors=True))
 
         for trail_uuid, trail_events in found_trails:
             if trail_uuid in blacklist:
