@@ -267,9 +267,9 @@ class TrailDBCursor(object):
         if lib.tdb_get_trail(self.cursor, trail_id) != 0:
             raise TrailDBError("Failed to initalize trail in cursor")
 
-            if self.event_filter_obj:
-                if lib.tdb_cursor_set_event_filter(self.cursor, self.event_filter_obj.flt):
-                    raise TrailDBError("cursor_set_event_filter failed")
+        if self.event_filter_obj:
+            if lib.tdb_cursor_set_event_filter(self.cursor, self.event_filter_obj.flt):
+                raise TrailDBError("cursor_set_event_filter failed")
 
     def next(self):
         """Return the next event in the trail."""
