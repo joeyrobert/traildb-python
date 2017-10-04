@@ -580,7 +580,7 @@ class TrailDB(object):
 
     def apply_whitelist(self, uuids):
         """
-        Applies a whitelist UUIDs to TrailDB so that further calls to
+        Applies a whitelist of UUIDs to TrailDB so that further calls to
         :py:meth:`~traildb.TrailDB.trails` do not return any events for UUIDs that
         have not been whitelisted with this call.
         """
@@ -605,7 +605,7 @@ class TrailDB(object):
 
     def apply_blacklist(self, uuids):
         """
-        Applies a blacklist UUIDs to TrailDB so that further calls to
+        Applies a blacklist of UUIDs to TrailDB so that further calls to
         :py:meth:`~traildb.TrailDB.trails` do not return any events for the blacklisted UUIDs.
         """
         empty_filter = lib.tdb_event_filter_new_match_none()
