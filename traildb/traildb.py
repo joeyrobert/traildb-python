@@ -254,7 +254,7 @@ class TrailDBCursor(object):
             if lib.tdb_cursor_set_event_filter(cursor, event_filter_obj.flt):
                 raise TrailDBError("cursor_set_event_filter failed")
         else:
-           self.event_filter_obj = None
+            self.event_filter_obj = None
 
     def __del__(self):
         if self.cursor:
@@ -268,7 +268,7 @@ class TrailDBCursor(object):
             raise TrailDBError("Failed to initalize trail in cursor")
 
             if self.event_filter_obj:
-                if lib.tdb_cursor_set_event_filter(self.cursor, event_filter_obj.flt):
+                if lib.tdb_cursor_set_event_filter(self.cursor, self.event_filter_obj.flt):
                     raise TrailDBError("cursor_set_event_filter failed")
 
     def next(self):
