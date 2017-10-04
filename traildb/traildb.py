@@ -1,13 +1,11 @@
 import os
 import sys
 
-from collections import namedtuple, defaultdict
-from collections import Mapping
 from ctypes import c_char, c_char_p, c_ubyte, c_int, c_void_p
-from ctypes import c_uint, c_uint8, c_uint32, c_uint64
+from ctypes import c_uint, c_uint32, c_uint64
 from ctypes import Structure, Union
-from ctypes import CDLL, CFUNCTYPE, POINTER, pointer
-from ctypes import byref, cast, string_at, addressof
+from ctypes import CDLL, POINTER, pointer
+from ctypes import string_at, addressof
 from datetime import datetime
 import time
 
