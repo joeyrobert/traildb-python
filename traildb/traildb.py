@@ -335,8 +335,9 @@ class TrailDB(object):
         event_filter=None -- Apply an event filter to this cursor.
         """
         cursor = lib.tdb_cursor_new(self._db)
-        if lib.tdb_get_trail(cursor, trail_id) != 0:
-            raise TrailDBError("Failed to create cursor")
+        err = lib.tdb_get_trail(cursor, trail_id)
+        if err != 0:
+            raise TrailDBError("Failed to create cursor: %s" % lib.tdb_error_str(err))
 
         if isinstance(event_filter, TrailDBEventFilter):
             event_filter_obj = event_filter
