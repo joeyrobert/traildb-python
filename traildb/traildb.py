@@ -387,7 +387,7 @@ class TrailDB(object):
         """Return the string value corresponding to an item."""
         value = lib.tdb_get_item_value(self._db, item, self._uint64_ptr)
         if value is None:
-            raise TrailDBError("Error reading value, error: %s" % lib.tdb_error(self._db))
+            raise TrailDBError("Error reading value")
         return value[0:self._uint64_ptr.contents.value]
 
     def get_value(self, fieldish, val):
@@ -396,7 +396,7 @@ class TrailDB(object):
         field = self.field(fieldish)
         value = lib.tdb_get_value(self._db, field, val, self._uint64_ptr)
         if value is None:
-            raise TrailDBError("Error reading value, error: %s" % lib.tdb_error(self._db))
+            raise TrailDBError("Error reading value")
         return value[0:self._uint64_ptr.contents.value]
 
     def get_uuid(self, trail_id, raw=False):
