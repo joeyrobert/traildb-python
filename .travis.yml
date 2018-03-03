@@ -1,23 +1,18 @@
 sudo: required
-env:
-  - LD_LIBRARY_PATH='/usr/local/lib'
-language: python
-python:
-  - "2.7"
-  - "3.3"
-  - "3.4"
-  - "3.5"
-# command to install dependencies
-before_install:
-  - git clone https://github.com/traildb/traildb traildb-core && pushd traildb-core
-  - sudo apt-get install -y libjudy-dev libarchive-dev pkg-config build-essential
-  - sudo python2 ./waf configure
-  - sudo python2 ./waf build
-  - sudo python2 ./waf install
-  - popd
 
-install:
-  - pip install -r requirements.txt
-  - python setup.py install
-# command to run tests
-script: python test/test.py
+language: python
+
+python:
+  - 2.7
+  - 3.3
+  - 3.4
+  - 3.5
+  - 3.6
+  - pypy
+  - pypy3.5
+
+before_install:
+  - ./travisdeps.sh
+
+script:
+  - ./runtests.sh
