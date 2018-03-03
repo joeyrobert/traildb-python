@@ -177,6 +177,66 @@ class TestAPI(unittest.TestCase):
             self.assertEqual(len(trail_events),
                              expected_length)
 
+    def test_apply_whitelist(self):
+        uuids = ["02345678123456781234567812345678",
+                 "12345678123456781234567812345678",
+                 "22345678123456781234567812345678",
+                 "32345678123456781234567812345678",
+                 "42345678123456781234567812345678"]
+        cons = TrailDBConstructor('whitelist_testtrail', ['field1', 'field2'])
+        for uuid in uuids:
+            cons.add(uuid, 1, ['a', '1'])
+            cons.add(uuid, 2, ['b', '2'])
+            cons.add(uuid, 3, ['c', '3'])
+        cons.finalize()
+        
+        tdb = TrailDB('whitelist_testtrail')
+        whitelist = [uuids[0],
+                     uuids[3],
+                     uuids[4]]
+        tdb.apply_whitelist(whitelist)
+        found_trails = list(tdb.trails(parsetime=False))
+
+        self.assertEqual(len(found_trails), len(uuids))
+        for trail_uuid, trail_events in found_trails:
+            if trail_uuid in whitelist:
+                expected_length = 3
+            else:
+                expected_length = 0
+                
+            trail_events = list(trail_events)
+            self.assertEqual(len(trail_events),
+                             expected_length)
+
+    def test_apply_blacklist(self):
+        uuids = ["02345678123456781234567812345678",
+                 "12345678123456781234567812345678",
+                 "22345678123456781234567812345678",
+                 "32345678123456781234567812345678",
+                 "42345678123456781234567812345678"]
+        cons = TrailDBConstructor('blacklist_testtrail', ['field1', 'field2'])
+        for uuid in uuids:
+            cons.add(uuid, 1, ['a', '1'])
+            cons.add(uuid, 2, ['b', '2'])
+            cons.add(uuid, 3, ['c', '3'])
+        cons.finalize()
+        
+        tdb = TrailDB('blacklist_testtrail')
+        blacklist = [uuids[1],
+                     uuids[2]]
+        tdb.apply_blacklist(blacklist)
+        found_trails = list(tdb.trails(parsetime=False))
+
+        for trail_uuid, trail_events in found_trails:
+            if trail_uuid in blacklist:
+                expected_length = 0
+            else:
+                expected_length = 3
+                
+            trail_events = list(trail_events)
+            self.assertEqual(len(trail_events),
+                             expected_length)
+
 class TestFilter(unittest.TestCase):
 
     def setUp(self):

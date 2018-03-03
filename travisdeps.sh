@@ -7,6 +7,7 @@ wget https://mirrors.kernel.org/ubuntu/pool/universe/j/judy/libjudy-dev_1.0.5-5_
 sudo dpkg -i libjudy-dev_1.0.5-5_amd64.deb libjudydebian1_1.0.5-5_amd64.deb
 
 # compile dependency in /opt/traildb/traildb
+
 mkdir -p /opt/traildb
 cd /opt/traildb
 
