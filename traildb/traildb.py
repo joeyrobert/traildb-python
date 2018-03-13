@@ -235,7 +235,7 @@ class TrailDBConstructor(object):
         if f > 0:
             raise TrailDBError("Too many values: %s" % db.num_fields)
 
-    def finalize(self, unicode=True):
+    def finalize(self, decode=True):
         """Finalize this TrailDB. You cannot add new events in this TrailDB
         after calling this function.
 
@@ -244,7 +244,7 @@ class TrailDBConstructor(object):
         r = lib.tdb_cons_finalize(self._cons)
         if r:
             raise TrailDBError("Could not finalize (%d)" % r)
-        return TrailDB(self.path, unicode)
+        return TrailDB(self.path, decode)
 
 
 class TrailDBCursor(object):
@@ -310,7 +310,7 @@ class TrailDB(object):
     TrailDB.num_fields -- number of fields
     """
 
-    def __init__(self, path, unicode=True):
+    def __init__(self, path, decode=True):
         """Open a TrailDB at path."""
         if isinstance(path, str):
             path = path.encode(CODEC)
@@ -328,7 +328,7 @@ class TrailDB(object):
                        for i in range(self.num_fields)]
         self._event_cls = namedtuple('event', self.fields, rename=True)
         self._uint64_ptr = pointer(c_uint64())
-        self.unicode = unicode
+        self.decode = decode
 
     def __del__(self):
         if hasattr(self, '_db'):
@@ -445,7 +445,7 @@ class TrailDB(object):
             raise TrailDBError("Error reading value, error: %s" %
                                lib.tdb_error(self._db))
 
-        if self.unicode:
+        if self.decode:
             return value[0:self._uint64_ptr.contents.value].decode(CODEC)
 
         return value[0:self._uint64_ptr.contents.value]
@@ -459,7 +459,7 @@ class TrailDB(object):
             raise TrailDBError("Error reading value, error: %s" %
                                lib.tdb_error(self._db))
 
-        if self.unicode:
+        if self.decode:
             return value[0:self._uint64_ptr.contents.value].decode(CODEC)
 
         return value[0:self._uint64_ptr.contents.value]

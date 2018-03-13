@@ -349,7 +349,7 @@ class TestCons(unittest.TestCase):
         uuid = '12345678123456781234567812345678'
         cons = TrailDBConstructor('testtrail', ['field1'])
         cons.add(uuid, 123, [binary])
-        tdb = cons.finalize(unicode=False)
+        tdb = cons.finalize(decode=False)
         self.assertEqual(list(tdb[0])[0].field1, binary)
 
     def test_cons(self):
