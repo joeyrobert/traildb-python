@@ -31,13 +31,23 @@ class TestAPI(unittest.TestCase):
 
         trail = db.trail(0)
         self.assertIsInstance(trail, TrailDBCursor)
-
         events = list(trail)  # Force evaluation of generator
         self.assertEqual(3, len(events))
+        
+        n = 0
+
         for event in events:
             self.assertTrue(hasattr(event, 'time'))
             self.assertTrue(hasattr(event, 'field1'))
             self.assertTrue(hasattr(event, 'field2'))
+            self.assertEqual(str(n+1), event.field2)
+
+            with self.assertRaises(AttributeError):
+                event.missing_field
+
+            n += 1
+
+        self.assertEqual(3, n)
 
     def test_trails_selected_uuids(self):
         uuids = ["02345678123456781234567812345678",
@@ -195,7 +205,7 @@ class TestAPI(unittest.TestCase):
                      uuids[3],
                      uuids[4]]
         tdb.apply_whitelist(whitelist)
-        found_trails = list(tdb.trails(parsetime=False))
+        found_trails = list(tdb.trails(parsetime=False, distinct_cursors=True))
 
         self.assertEqual(len(found_trails), len(uuids))
         for trail_uuid, trail_events in found_trails:
@@ -225,7 +235,7 @@ class TestAPI(unittest.TestCase):
         blacklist = [uuids[1],
                      uuids[2]]
         tdb.apply_blacklist(blacklist)
-        found_trails = list(tdb.trails(parsetime=False))
+        found_trails = list(tdb.trails(parsetime=False, distinct_cursors=True))
 
         for trail_uuid, trail_events in found_trails:
             if trail_uuid in blacklist:

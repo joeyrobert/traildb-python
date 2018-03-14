@@ -50,3 +50,17 @@ Or, you can run the docker image with your password (yourPassword), and your jup
     $ docker run -e PASSWORD=yourPassword -p 8080:8888 -it c3h3/traildb-ipynb
 
 Easily to use [http://localhost:8080](http://localhost:8080) to access your jupyter notebook
+
+#### Documentation
+
+Sphinx documentation is available.
+
+1. Ensure Sphinx is installed.
+
+`pip install sphinx`
+
+2. Generate HTML documentation.
+
+`sphinx-build -b html . _build`
+
+Open `_build/index.html` in a browser.

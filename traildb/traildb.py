@@ -124,12 +124,18 @@ api(lib.tdb_set_opt, [tdb, c_uint, tdb_opt_value], tdb_error)
 api(lib.tdb_set_trail_opt, [tdb, c_uint64, c_uint, tdb_opt_value], tdb_error)
 
 def uuid_hex(uuid):
+    """
+    :returns: Given a binary UUID, encodes it into hex.
+    """
     if isinstance(uuid, basestring):
         return uuid
     return codecs.encode(string_at(uuid, 16), HEX).decode(CODEC)
 
 
 def uuid_raw(uuid):
+    """
+    :returns: Given a hex UUID, encodes it into binary.
+    """
     if isinstance(uuid, basestring):
         return (c_ubyte * 16).from_buffer_copy(codecs.decode(uuid, HEX))
     return uuid
@@ -171,18 +177,26 @@ def tdb_item_val(item):
 
 
 class TrailDBError(Exception):
-    """TrailDB error condition."""
+    """This is the exception thrown when something fails with TrailDB."""
     pass
 
 
 class TrailDBConstructor(object):
-    """Construct a new TrailDB."""
+    """Objects of this class are used to Construct new TrailDBs."""
 
     def __init__(self, path, ofields=()):
         """Initialize a new TrailDB constructor.
 
-        path -- TrailDB output path (without .tdb).
-        ofields -- List of field (names) in this TrailDB.
+        :param path: TrailDB output path (without .tdb).
+        :param ofields: List of field (names) in this TrailDB.
+
+        .. code-block:: python
+        
+          import traildb
+          tdbcons = traildb.TrailDBConstructor('example', ['type', 'flavor'])
+          c.add('00000000000000000000000000000001', 123, ['click', 'tasty'])
+          c.add('00000000000000000000000000000002', 129, ['flash', 'sour'])
+          c.finalize()   # Don't forget to finalize, otherwise you won't get a full TrailDB.
         """
         if not path:
             raise TrailDBError("Path is required")
@@ -208,9 +222,13 @@ class TrailDBConstructor(object):
     def add(self, uuid, tstamp, values):
         """Add an event in TrailDB.
 
-        uuid -- UUID of this event.
-        tstamp -- Timestamp of this event (datetime or integer).
-        values -- value of each field.
+        :param uuid: UUID of this event.
+        :param tstamp: Timestamp of this event (datetime or integer).
+        :param values: value of each field.
+
+        .. code-block:: python
+
+          cons.add('00000000000000000000000000000001', 123, ['click', 'tasty'])
         """
         if isinstance(tstamp, datetime):
             tstamp = int(time.mktime(tstamp.timetuple()))
@@ -227,7 +245,7 @@ class TrailDBConstructor(object):
     def append(self, db):
         """Merge an existing TrailDB in this TrailDB.
 
-        db -- an existing TrailDB
+        :param db: An instance of :py:class:`~traildb.TrailDB` you want to merge to this one.
         """
         f = lib.tdb_cons_append(self._cons, db._db)
         if f < 0:
@@ -239,7 +257,12 @@ class TrailDBConstructor(object):
         """Finalize this TrailDB. You cannot add new events in this TrailDB
         after calling this function.
 
-        Returns a new TrailDB handle.
+        You need to finalize :py:class:`~traildb.TrailDBConstructor` or you
+        will not have an openable TrailDB later. Finalization is where all the
+        compression and preparation happen and is typically the most
+        resource-intensive part of TrailDB building.
+
+        :returns: Opened :py:class:`~traildb.TrailDB`:
         """
         r = lib.tdb_cons_finalize(self._cons)
         if r:
@@ -248,11 +271,14 @@ class TrailDBConstructor(object):
 
 
 class TrailDBCursor(object):
-    """
-    TrailDBCursor iterates over events of a trail.
+    """TrailDBCursor iterates over events of a trail.
 
     Typically this class is not instantiated directly but it is
-    returned by TrailDB.trail().
+    returned by TrailDB.trail() or TrailDB.cursor()
+
+    A cursor can be reused for different trails by calling
+    TrailDBCursor.get_trail(trail_id)
+
     """
 
     def __init__(self,
@@ -271,6 +297,8 @@ class TrailDBCursor(object):
             self.event_filter_obj = event_filter_obj
             if lib.tdb_cursor_set_event_filter(cursor, event_filter_obj.flt):
                 raise TrailDBError("cursor_set_event_filter failed")
+        else:
+            self.event_filter_obj = None
 
     def __del__(self):
         if self.cursor:
@@ -278,6 +306,14 @@ class TrailDBCursor(object):
 
     def __iter__(self):
         return self
+
+    def get_trail(self, trail_id):
+        if lib.tdb_get_trail(self.cursor, trail_id) != 0:
+            raise TrailDBError("Failed to initalize trail in cursor")
+
+        if self.event_filter_obj:
+            if lib.tdb_cursor_set_event_filter(self.cursor, self.event_filter_obj.flt):
+                raise TrailDBError("cursor_set_event_filter failed")
 
     def __next__(self):
         """Return the next event in the trail."""
@@ -291,27 +327,61 @@ class TrailDBCursor(object):
         timestamp = event.contents.timestamp
         if self.parsetime:
             timestamp = datetime.fromtimestamp(event.contents.timestamp)
+
         if self.only_timestamp:
             return timestamp
         elif self.valuefun:
-            return self.cls(timestamp,
-                            *(self.valuefun(item) for item in items))
+            #return self.cls(timestamp, *(self.valuefun(item) for item in items))
+            return self.cls(False, timestamp, *items)
         else:
-            return self.cls(timestamp, *items)
+            return self.cls(True, timestamp, *items)
+
+
+def mk_event_class(fields, valuefun):
+    field_to_index = {f: i for i, f in enumerate(fields)}
+
+    class TrailDBEvent(object):
+        __slots__ = ('items', 'rawitems', 'memoized')
+
+        def __init__(self, rawitems, *items):
+            self.items = tuple(items)
+            self.rawitems = rawitems
+            self.memoized = {}
+
+        def __getattr__(self, name):
+            if name in self.memoized:
+                return self.memoized[name]
+
+            if name not in field_to_index:
+                raise AttributeError
+
+            item = self.items[field_to_index[name]]
+            if self.rawitems:
+                return item
+            else:
+                if name == 'time':
+                    return item
+                else:
+                    self.memoized[name] = valuefun(item)
+                    return self.memoized[name]
+
+    return TrailDBEvent
+
 
 
 class TrailDB(object):
-    """Query a TrailDB.
+    """Objects of this class represent an opened TrailDB.
 
-    Attributes:
+    Simply pass the filename to the constructor (with or without extension) as below.
 
-    TrailDB.num_trails -- number of trails
-    TrailDB.num_events -- number of events
-    TrailDB.num_fields -- number of fields
+    .. code-block:: python
+    
+      import traildb
+      tdb = traildb.TrailDB('blah.tdb')
+
     """
-
     def __init__(self, path, decode=True):
-        """Open a TrailDB at path."""
+        """Opens a TrailDB at given path."""
         if isinstance(path, str):
             path = path.encode(CODEC)
 
@@ -326,7 +396,7 @@ class TrailDB(object):
         self.num_fields = lib.tdb_num_fields(db)
         self.fields = [lib.tdb_get_field_name(db, i).decode(CODEC)
                        for i in range(self.num_fields)]
-        self._event_cls = namedtuple('event', self.fields, rename=True)
+        self._event_cls = mk_event_class(self.fields, self.get_item_value)
         self._uint64_ptr = pointer(c_uint64())
         self.decode = decode
 
@@ -335,7 +405,7 @@ class TrailDB(object):
             lib.tdb_close(self._db)
 
     def __contains__(self, uuidish):
-        """Return True if UUID or Trail ID exists in this TrailDB."""
+        """:returns: True if UUID or Trail ID exists in this TrailDB."""
         try:
             self[uuidish]
             return True
@@ -343,34 +413,66 @@ class TrailDB(object):
             return False
 
     def __getitem__(self, uuidish):
-        """Return a cursor for the given UUID or Trail ID."""
+        """:returns: a cursor for the given UUID or Trail ID."""
         if isinstance(uuidish, basestring):
             return self.trail(self.get_trail_id(uuidish))
         return self.trail(uuidish)
 
     def __len__(self):
-        """Return the number of trails."""
+        """:returns: The number of trails in the TrailDB."""
         return self.num_trails
 
-    def trails(self, selected_uuids=None, **kwds):
+    def trails(self, selected_uuids=None, distinct_cursors=False, **kwds):
         """
         Iterate over all trails in this TrailDB.
 
-        The selected_uuids keyword argument can be used to select a subset
-        of trails to iterate over. Missing uuids are skipped over.
+        :param selected_uuids: If passed, only go through the UUIDs passed in
+          this argument. It should be an iterable that yields hex UUIDs.
 
-        All other keyword arguments are passed to trail().
+        :param distinct_cursors: Normally this function shares a single cursor
+          for all yielded trails. If you don't consume the events from one
+          trail immediately before you call :py:meth:`~TrailDB.trails()` again, the underlying
+          cursor object will be re-used for next trail. However, if
+          disinct_cursors is set to True, a new cursor is created for every
+          new trail. Cursors are relatively heavy entities so while using
+          ``distinct_cursors=True`` makes this function slightly safer, it
+          also makes it *much* less efficient.
+
+        :returns: Yields ``(uuid, events)`` pairs.
+
+        Any other keyword arguments are passed to :py:meth:`~TrailDB.cursor()`.
+
+        .. code-block:: python
+
+          # Prints all UUIDs in a TrailDB
+          import traildb
+          tdb = traildb.TrailDB('blah')
+          for uuid, events in tdb.trails():
+            print(uuid)
+        
         """
+        if not distinct_cursors:
+            cursor = self.cursor(**kwds)
+
         if selected_uuids is not None:
             for uuid in selected_uuids:
                 try:
                     i = self.get_trail_id(uuid)
                 except IndexError:
                     continue
-                yield uuid, self.trail(i, **kwds)
+
+                if distinct_cursors:
+                    cursor = self.cursor(**kwds)
+
+                cursor.get_trail(i)
+                yield uuid, cursor
         else:
             for i in range(len(self)):
-                yield self.get_uuid(i), self.trail(i, **kwds)
+                if distinct_cursors:
+                    cursor = self.cursor(**kwds)
+
+                cursor.get_trail(i)
+                yield self.get_uuid(i), cursor
 
     def trail(self,
               trail_id,
@@ -380,11 +482,15 @@ class TrailDB(object):
               event_filter=None):
         """Return a cursor over a single trail.
 
-        trail_id -- Trail ID.
-        parsetime=False -- Return datetime objects instead of int timestamps.
-        rawitems=False -- Return integer items instead of string values.
-        only_timestamp=False -- Return only timestamps, not event objects.
-        event_filter=None -- Apply an event filter to this cursor.
+        :param trail_id: Trail ID to use.
+        :param parsetime: If True, returns datetime objects instead of integer timestamps.
+        :param rawitems: Return raw integer items instead of stringified values. Using raw items is usually a bit more efficient than using string values.
+        :param only_timestamp: If True, only return timestamps, not event objects.
+        :param event_filter: Apply given event filter to the cursor.
+        :returns: A :py:class:`~traildb.TrailDBCursor` to given Trail ID.
+
+        This function can throw :py:class:`~traildb.TrailDBError` if Trail ID is not
+        present in the TrailDB.
         """
         cursor = lib.tdb_cursor_new(self._db)
         if lib.tdb_get_trail(cursor, trail_id) != 0:
@@ -405,21 +511,31 @@ class TrailDB(object):
                              only_timestamp,
                              event_filter_obj)
 
+    def cursor(self, *args, **kwargs):
+        """Alias for :py:meth:`~traildb.TrailDB.trail` with ``trail_id=0``"""
+        return self.trail(0, *args, **kwargs)
+
     def field(self, fieldish):
-        """Return a field ID given a field name."""
+        """:returns: a field ID given a field name.
+
+        .. code-block:: python
+
+          import traildb
+          tdb = traildb.TrailDB('blah.tdb')
+          print(tdb.field('type'))
+        """
         if isinstance(fieldish, basestring):
             return self.fields.index(fieldish)
         return fieldish
 
     def lexicon(self, fieldish):
-        """Return an iterator over values of the given field ID or field name"""
+        """:returns: an iterator over values of the given field ID or field name."""
         field = self.field(fieldish)
         return (self.get_value(field, i)
                 for i in range(1, self.lexicon_size(field)))
 
     def lexicon_size(self, fieldish):
-        """Return the number of distinct values in the given
-        field ID or field name."""
+        """:returns: The number of distinct values in the given field ID or field name. (i.e. cardinality of a field in the TrailDB)"""
         field = self.field(fieldish)
         value = lib.tdb_lexicon_size(self._db, field)
         if value == 0:
@@ -427,8 +543,15 @@ class TrailDB(object):
         return value
 
     def get_item(self, fieldish, value):
-        """Return the item corresponding to a field ID or
-        a field name and a string value."""
+        """:returns: The item corresponding to a field ID or a field name and a string value.
+
+        .. code-block:: python
+
+          import traildb
+          tdb = traildb.TrailDB('blah.tdb')
+          print(tdb.get_item('type', 'click'))
+        
+        """
         field = self.field(fieldish)
         item = lib.tdb_get_item(self._db,
                                 field,
@@ -439,7 +562,17 @@ class TrailDB(object):
         return item
 
     def get_item_value(self, item):
-        """Return the string value corresponding to an item."""
+        """:returns: The string value corresponding to an item.
+        
+        .. code-block:: python
+
+          import traildb
+          tdb = traildb.TrailDB('blah.tdb')
+
+          # This should print 'click' (if TrailDB contains 'type' field and 'click' values in that field).
+          print(tdb.get_item_value(tdb.get_item('type', 'click')))
+        
+        """
         value = lib.tdb_get_item_value(self._db, item, self._uint64_ptr)
         if value is None:
             raise TrailDBError("Error reading value, error: %s" %
@@ -451,8 +584,7 @@ class TrailDB(object):
         return value[0:self._uint64_ptr.contents.value]
 
     def get_value(self, fieldish, val):
-        """Return the string value corresponding to a field ID or
-        a field name and a value ID."""
+        """:returns: The string value corresponding to a field ID or a field name and a value ID."""
         field = self.field(fieldish)
         value = lib.tdb_get_value(self._db, field, val, self._uint64_ptr)
         if value is None:
@@ -465,7 +597,11 @@ class TrailDB(object):
         return value[0:self._uint64_ptr.contents.value]
 
     def get_uuid(self, trail_id, raw=False):
-        """Return UUID given a Trail ID."""
+        """
+        :param trail_id: The Trail ID to give UUID for.
+        :param raw: If true, returns 16-byte binary string for UUID instead of hexified UUID.
+        :returns: UUID given a Trail ID.
+        """
         uuid = lib.tdb_get_uuid(self._db, trail_id)
         if uuid:
             if raw:
@@ -475,16 +611,19 @@ class TrailDB(object):
         raise IndexError("Trail ID out of range")
 
     def get_trail_id(self, uuid):
-        """Return Trail ID given a UUID."""
+        """:returns: Trail ID given a UUID.
+
+        This is the reverse of :py:meth:`traildb.TrailDB.get_uuid`.
+        """
         ret = lib.tdb_get_trail_id(self._db, uuid_raw(uuid), self._uint64_ptr)
         if ret:
             raise IndexError("UUID '%s' not found" % uuid)
         return self._uint64_ptr.contents.value
 
     def time_range(self, parsetime=False):
-        """Return the time range covered by this TrailDB.
+        """:returns: The time range covered by this TrailDB.
 
-        parsetime=False -- Return time range as integers or datetime objects.
+        :param parsetime: If True, return time range as integers or datetime objects.
         """
         tmin = self.min_timestamp()
         tmax = self.max_timestamp()
@@ -493,21 +632,22 @@ class TrailDB(object):
         return tmin, tmax
 
     def min_timestamp(self):
-        """Return the minimum time stamp of this TrailDB."""
+        """:returns: The minimum time stamp of this TrailDB."""
         return lib.tdb_min_timestamp(self._db)
 
     def max_timestamp(self):
-        """Return the maximum time stamp of this TrailDB."""
+        """:returns: The maximum time stamp of this TrailDB."""
         return lib.tdb_max_timestamp(self._db)
 
     def create_filter(self, event_filter):
+        """:returns: :py:class:`~traildb.TrailDBEventFilter` object created from this TrailDB."""
         return TrailDBEventFilter(self, event_filter)
 
     def apply_whitelist(self, uuids):
         """
-        Apply a whitelist of the given uuids so that only
-        events with the given uuids are returned by the
-        cursor. (Empty trails are still returned for other uuids.)
+        Applies a whitelist of UUIDs to TrailDB so that further calls to
+        :py:meth:`~traildb.TrailDB.trails` do not return any events for UUIDs that
+        have not been whitelisted with this call.
         """
         empty_filter = lib.tdb_event_filter_new_match_none()
         all_filter = lib.tdb_event_filter_new_match_all()
@@ -531,9 +671,8 @@ class TrailDB(object):
 
     def apply_blacklist(self, uuids):
         """
-        Apply a blacklist of the given uuids so that
-        only events without the given uuids are returned by the
-        cursor. (Empty trails are still returned for the given uuids.)
+        Applies a blacklist of UUIDs to TrailDB so that further calls to
+        :py:meth:`~traildb.TrailDB.trails` do not return any events for the blacklisted UUIDs.
         """
         empty_filter = lib.tdb_event_filter_new_match_none()
         all_filter = lib.tdb_event_filter_new_match_all()
@@ -564,35 +703,47 @@ class TrailDBEventFilter(object):
     Queries are boolean expressions defined from terms and clauses.  A term is
     defined using a tuple:
 
-    (field_name, "value") -- match records with field_name == "value"
-    (field_name, "value", False) -- match records with field_name == "value"
-    (field_name, "value", True) -- match records with field_name != "value"
-    (start_time, end_time) -- match records with start_time <= time < end_time
+    .. code-block:: python
+
+      (field_name, "value")        # match records with field_name == "value"
+      (field_name, "value", False) # match records with field_name == "value"
+      (field_name, "value", True)  # match records with field_name != "value"
+      (start_time, end_time)       # match records with start_time <= time < end_time
 
     Clauses are boolean expressions formed from terms, which are connected with AND.
     Clauses are defined with lists of terms:
 
-    [term]
-    [term1, term2]
-    [term1, term2, ...]
+    .. code-block:: python
+
+      [term]
+      [term1, term2]
+      [term1, term2, ...]
 
     Queries are boolean expressions formed from clauses, which are connected with OR.
     Queries are defined with lists of clauses:
 
-    [clause]
-    [clause1, clause2]
-    [clause1, clause2, ...]
+    .. code-block:: python
+
+      [clause]
+      [clause1, clause2]
+      [clause1, clause2, ...]
 
     Some complete examples:
     
-    [[("user", "george_jetson")]] -- Match records for the user "george_jetson"
-    [[("user", "george_jetson", True)]] -- Match records for users other than "george_jetson"
-    [[(1501013929, 1501100260)]] -- Match records between 2017-07-25 3:18 pm to  2017-07-26 3:18 pm
-    [[("job_title", "manager"), ("user", "george_jetson")]] -- Match records for the user "george_jetson" AND with job title "manager"
-    [[("job_title", "manager")], [("user", "george_jetson")]] -- Match records for the user "george_jetson" OR with job title "manager"
-    [[("job_title", "manager"), (1501013929, 1501100260)], [("user", "george_jetson"), (1501013929, 1501100260)]] -- Match records for the user "george_jetson" OR with job title "manager" and between 2017-07-25 3:18 pm to  2017-07-26 3:18 pm
+    .. code-block:: python
+
+      [[("user", "george_jetson")]] # Match records for the user "george_jetson"
+      [[("user", "george_jetson", True)]] # Match records for users other than "george_jetson"
+      [[(1501013929, 1501100260)]] # Match records between 2017-07-25 3:18 pm to  2017-07-26 3:18 pm
+      [[("job_title", "manager"), ("user", "george_jetson")]] # Match records for the user "george_jetson" AND with job title "manager"
+      [[("job_title", "manager")], [("user", "george_jetson")]] # Match records for the user "george_jetson" OR with job title "manager"
+      [[("job_title", "manager"), (1501013929, 1501100260)], [("user", "george_jetson"), (1501013929, 1501100260)]] # Match records for the user "george_jetson" OR with job title "manager" and between 2017-07-25 3:18 pm to  2017-07-26 3:18 pm
     """
     def __init__(self, db, query):
+        """
+        Initializes TrailDBEventFilter. You might want to use :py:meth:`traildb.TrailDB.create_filter` instead that passes ``db`` automatically.
+        """
+
         self.flt = lib.tdb_event_filter_new()
         if type(query[0]) is tuple:
             query = [query]
@@ -629,3 +780,4 @@ class TrailDBEventFilter(object):
 
     def __del__(self):
         lib.tdb_event_filter_free(self.flt)
+
